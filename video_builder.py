@@ -120,10 +120,12 @@ def build_final_video(
     # Échappe le chemin SRT pour FFmpeg (antislash Windows + virgules)
     srt_escaped = str(srt_path).replace("\\", "/").replace(":", "\\:")
 
-    # Texte CTA nettoyé : supprime émojis, newlines et caractères non-ASCII
+    # Texte CTA nettoyé : supprime émojis, newlines et caractères spéciaux FFmpeg
+    # Les caractères : ' \ , = [ ] sont des séparateurs dans les filtres FFmpeg
+    cta_raw = cta.replace("\n", " ").replace("\r", "").split("http")[0]  # coupe l'URL
     cta_clean = "".join(
-        c for c in cta.replace("\n", " ").replace("\r", "")[:50]
-        if ord(c) < 128
+        c for c in cta_raw[:60]
+        if ord(c) < 128 and c not in ":'\\,=[]{}()"
     ).strip()
 
     # Filtre vidéo simple — PAS de label [bg], source déjà passée en -i
