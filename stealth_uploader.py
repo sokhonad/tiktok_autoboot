@@ -181,7 +181,7 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
 
     # Navigation vers la page d'upload
     logger.info("Navigation vers la page d'upload...")
-    await page.goto(TIKTOK_UPLOAD_URL, wait_until="networkidle", timeout=30000)
+    await page.goto(TIKTOK_UPLOAD_URL, wait_until="domcontentloaded", timeout=60000)
     await human_delay(2000, 3500)
 
     # Cherche le bouton d'upload ou l'input file
