@@ -221,8 +221,18 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
                 break
 
     if not upload_input:
-        logger.error("Input d'upload introuvable — screenshot de debug")
-        await page.screenshot(path="/app/logs/debug_upload.png")
+        # Log de debug : URL, titre, frames et HTML partiel
+        logger.error(f"Input introuvable — URL: {page.url}")
+        logger.error(f"Input introuvable — Titre: {await page.title()}")
+        all_frames = page.frames
+        for i, f in enumerate(all_frames):
+            logger.error(f"  Frame {i}: {f.url[:100]}")
+        # Log du HTML de la page pour inspecter la structure
+        try:
+            html = await page.content()
+            logger.error(f"  HTML (500 chars): {html[:500]}")
+        except Exception:
+            pass
         return False
 
     # Upload du fichier vidéo
