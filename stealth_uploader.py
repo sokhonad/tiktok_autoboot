@@ -88,21 +88,71 @@ window._mouseX = 540; window._mouseY = 960;
 """
 
 
+def _normalize_cookies(cookies: list[dict]) -> list[dict]:
+    """
+    Normalise les cookies pour Playwright :
+    - sameSite : null/no_restriction → "None", lax → "Lax", strict → "Strict"
+    - Supprime les champs inconnus (storeId, hostOnly, session...)
+    - Supprime les cookies sans valeur
+    """
+    # Mapping des valeurs sameSite acceptées par Playwright
+    same_site_map = {
+        None: "None",
+        "": "None",
+        "null": "None",
+        "no_restriction": "None",
+        "unspecified": "None",
+        "lax": "Lax",
+        "strict": "Strict",
+        "none": "None",
+        "Lax": "Lax",
+        "Strict": "Strict",
+        "None": "None",
+    }
+
+    playwright_cookies = []
+    for c in cookies:
+        if not c.get("value"):
+            continue
+
+        same_site_raw = c.get("sameSite")
+        same_site = same_site_map.get(same_site_raw, "None")
+
+        cookie = {
+            "name": c["name"],
+            "value": c["value"],
+            "domain": c.get("domain", ".tiktok.com"),
+            "path": c.get("path", "/"),
+            "secure": c.get("secure", False),
+            "httpOnly": c.get("httpOnly", False),
+            "sameSite": same_site,
+        }
+
+        # Ajoute expires seulement si présent et valide
+        if c.get("expirationDate"):
+            cookie["expires"] = int(c["expirationDate"])
+
+        playwright_cookies.append(cookie)
+
+    return playwright_cookies
+
+
 async def _load_cookies(context: BrowserContext) -> None:
-    """Charge les cookies TikTok depuis le fichier JSON si présent."""
+    """Charge et normalise les cookies TikTok depuis le fichier JSON."""
     if not COOKIES_PATH.exists():
         logger.warning(f"Fichier cookies introuvable : {COOKIES_PATH}")
         return
 
     with open(COOKIES_PATH, encoding="utf-8") as f:
-        cookies = json.load(f)
+        raw_cookies = json.load(f)
 
-    # Format Playwright : liste de dicts avec name, value, domain, path...
-    if isinstance(cookies, list):
-        await context.add_cookies(cookies)
-        logger.info(f"{len(cookies)} cookies chargés")
-    else:
+    if not isinstance(raw_cookies, list):
         logger.warning("Format cookies.json non supporté (doit être une liste)")
+        return
+
+    cookies = _normalize_cookies(raw_cookies)
+    await context.add_cookies(cookies)
+    logger.info(f"{len(cookies)} cookies chargés et normalisés")
 
 
 async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list[str]) -> bool:
