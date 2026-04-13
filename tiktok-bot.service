@@ -1,0 +1,46 @@
+# tiktok-bot.service — Service systemd pour TikTok Autobot
+# Emplacement : /etc/systemd/system/tiktok-bot.service
+#
+# Installation :
+#   sudo cp tiktok-bot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable tiktok-bot.timer
+
+[Unit]
+Description=TikTok Autobot — Génération et upload vidéo tech_fr
+After=network-online.target
+Wants=network-online.target
+Documentation=https://github.com/youruser/tiktok-autobot
+
+[Service]
+Type=oneshot
+# Répertoire du projet — adapte ce chemin
+WorkingDirectory=/opt/tiktok-autobot
+
+# Exécution via Python du venv
+ExecStart=/opt/tiktok-autobot/venv/bin/python main.py
+
+# Utilisateur dédié (non-root)
+User=tiktokbot
+Group=tiktokbot
+
+# Chargement des variables d'environnement depuis .env
+EnvironmentFile=/opt/tiktok-autobot/.env
+
+# Restart en cas d'échec
+Restart=on-failure
+RestartSec=30s
+
+# Logs systemd
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tiktok-autobot
+
+# Sécurité
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/tiktok-autobot/output /opt/tiktok-autobot/logs
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,33 @@
+# Secrets — ne jamais commiter
+.env
+cookies.json
+
+# Sorties générées
+output/
+logs/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Node.js
+node_modules/
+npm-debug.log*
+
+# Python virtual env
+venv/
+.venv/
+env/
+
+# Whisper cache
+.cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build Remotion
+out/

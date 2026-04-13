@@ -1,0 +1,32 @@
+# tiktok-bot.timer — Timer systemd toutes les 3h
+# Emplacement : /etc/systemd/system/tiktok-bot.timer
+#
+# Déclenchement : 00h, 03h, 06h, 09h, 12h, 15h, 18h, 21h = 8 vidéos/jour
+#
+# Installation :
+#   sudo cp tiktok-bot.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now tiktok-bot.timer
+#
+# Vérification :
+#   sudo systemctl status tiktok-bot.timer
+#   sudo systemctl list-timers tiktok-bot.timer
+
+[Unit]
+Description=Timer TikTok Autobot — Toutes les 3 heures
+Requires=tiktok-bot.service
+
+[Timer]
+# Déclenchement exact à chaque multiple de 3h depuis minuit
+OnCalendar=*-*-* 00,03,06,09,12,15,18,21:00:00
+
+# Légère variation aléatoire pour éviter les pics de charge serveur (max 5min)
+RandomizedDelaySec=300
+
+# Lance immédiatement si le dernier déclenchement a été manqué
+Persistent=true
+
+Unit=tiktok-bot.service
+
+[Install]
+WantedBy=timers.target
