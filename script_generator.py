@@ -1,5 +1,5 @@
 """
-script_generator.py — Génération de scripts viraux via Claude API.
+script_generator.py — Génération de scripts viraux via OpenAI API.
 Retourne un dict JSON structuré : title, hook, segments[], cta, hashtags.
 """
 
@@ -7,9 +7,9 @@ import json
 import logging
 from typing import Any
 
-import anthropic
+from openai import OpenAI
 
-from config import ANTHROPIC_API_KEY, CLAUDE_MODEL
+from config import OPENAI_API_KEY, OPENAI_MODEL
 from content_strategy import DayStrategy
 
 logger = logging.getLogger(__name__)
@@ -27,6 +27,7 @@ RÈGLES ABSOLUES :
 - Format vidéo TikTok vertical 60 secondes max
 
 Tu réponds UNIQUEMENT en JSON valide, sans markdown, sans explication."""
+
 
 def _build_user_prompt(topic: str, strategy: DayStrategy) -> str:
     """Construit le prompt utilisateur avec le topic et la stratégie du jour."""
@@ -61,7 +62,7 @@ Contraintes :
 
 def generate_script(topic: str, strategy: DayStrategy) -> dict[str, Any]:
     """
-    Appelle Claude API et retourne le script structuré.
+    Appelle OpenAI API et retourne le script structuré.
 
     Args:
         topic: Le sujet de la vidéo
@@ -72,24 +73,26 @@ def generate_script(topic: str, strategy: DayStrategy) -> dict[str, Any]:
 
     Raises:
         ValueError: Si la réponse n'est pas un JSON valide
-        anthropic.APIError: Si l'appel API échoue
+        openai.APIError: Si l'appel API échoue
     """
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    client = OpenAI(api_key=OPENAI_API_KEY)
 
     logger.info(f"Génération script pour topic : '{topic}'")
 
-    message = client.messages.create(
-        model=CLAUDE_MODEL,
+    response = client.chat.completions.create(
+        model=OPENAI_MODEL,
         max_tokens=1500,
-        system=SYSTEM_PROMPT,
+        temperature=0.8,          # un peu de créativité pour le contenu viral
+        response_format={"type": "json_object"},  # force le JSON natif OpenAI
         messages=[
-            {"role": "user", "content": _build_user_prompt(topic, strategy)}
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": _build_user_prompt(topic, strategy)},
         ],
     )
 
-    raw_text = message.content[0].text.strip()
+    raw_text = response.choices[0].message.content.strip()
 
-    # Nettoie les éventuels blocs markdown que Claude pourrait ajouter
+    # Nettoie les éventuels blocs markdown résiduels
     if raw_text.startswith("```"):
         lines = raw_text.split("\n")
         raw_text = "\n".join(lines[1:-1])
@@ -97,7 +100,7 @@ def generate_script(topic: str, strategy: DayStrategy) -> dict[str, Any]:
     try:
         script = json.loads(raw_text)
     except json.JSONDecodeError as e:
-        logger.error(f"Réponse Claude non-JSON : {raw_text[:200]}")
+        logger.error(f"Réponse OpenAI non-JSON : {raw_text[:200]}")
         raise ValueError(f"Script non parseable : {e}") from e
 
     # Validation minimale des champs requis

@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / ".env")
 
 # ── API Keys ────────────────────────────────────────────────────────────────
-ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
+OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 ELEVENLABS_API_KEY: str = os.getenv("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE_ID: str = os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")  # Sarah FR par défaut
 
@@ -26,7 +26,7 @@ COOKIES_PATH = Path(os.getenv("TIKTOK_COOKIES_PATH", BASE_DIR / "cookies.json"))
 REMOTION_DIR = BASE_DIR / "tiktok-visuals"
 
 # ── Modèles ──────────────────────────────────────────────────────────────────
-CLAUDE_MODEL = "claude-sonnet-4-20250514"
+OPENAI_MODEL = "gpt-4o"                  # gpt-4o = meilleur rapport qualité/coût
 WHISPER_MODEL = "base"                   # base = bon compromis vitesse/qualité
 WHISPER_LANGUAGE = "fr"
 

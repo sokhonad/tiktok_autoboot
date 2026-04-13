@@ -1,7 +1,7 @@
 # TikTok Autobot — Pipeline vidéo tech_fr automatisé
 
 > Pipeline complet qui génère et publie **8 vidéos TikTok/jour** sur la niche tech FR.  
-> Stack : Python 3.11 · FFmpeg · Playwright · Remotion · Whisper · Claude API · ElevenLabs
+> Stack : Python 3.11 · FFmpeg · Playwright · Remotion · Whisper · OpenAI API · ElevenLabs
 
 ---
 
@@ -35,7 +35,7 @@ Cron systemd (toutes les 3h)
         │
         ├─ 1. content_strategy.py ──→  topic du jour (pool de 70+ sujets)
         │
-        ├─ 2. script_generator.py ──→  Claude claude-sonnet-4-20250514
+        ├─ 2. script_generator.py ──→  OpenAI gpt-4o
         │                              └─→ JSON { title, hook, segments[], cta, hashtags }
         │
         ├─ 3. tts.py ───────────────→  ElevenLabs multilingual v2
@@ -68,7 +68,7 @@ Cron systemd (toutes les 3h)
 | FFmpeg | 5.0+ | Montage vidéo |
 | RAM | 4 Go | Whisper + Chromium headless |
 | Disque | 10 Go | Modèles + sorties vidéo |
-| Clé Anthropic | — | Génération script (Claude) |
+| Clé OpenAI | — | Génération script (GPT-4o) |
 | Clé ElevenLabs | — | Synthèse vocale FR |
 
 ---
@@ -137,9 +137,9 @@ nano .env
 ```
 
 ```env
-# ── Claude API (Anthropic) ────────────────────────────────────────────
-# Obtenir sur : console.anthropic.com
-ANTHROPIC_API_KEY=sk-ant-api03-...
+# ── OpenAI API ────────────────────────────────────────────────────────
+# Obtenir sur : platform.openai.com/api-keys
+OPENAI_API_KEY=sk-...
 
 # ── ElevenLabs TTS ────────────────────────────────────────────────────
 # Obtenir sur : elevenlabs.io/api
@@ -159,7 +159,7 @@ TIKTOK_COOKIES_PATH=cookies.json
 
 | Variable | Défaut | Description |
 |---|---|---|
-| `CLAUDE_MODEL` | `claude-sonnet-4-20250514` | Modèle Claude utilisé |
+| `OPENAI_MODEL` | `gpt-4o` | Modèle OpenAI utilisé (`gpt-4o`, `gpt-4o-mini`…) |
 | `WHISPER_MODEL` | `base` | Taille modèle Whisper (`tiny`/`base`/`small`) |
 | `TTS_SPEED` | `1.1` | Vitesse voix ElevenLabs (1.0 = normal) |
 | `VIDEO_FPS` | `30` | Images par seconde |
@@ -252,7 +252,7 @@ Pour ajouter des topics ou modifier les affiliations : édite `content_strategy.
 
 ### 1 — Génération script (`script_generator.py`)
 
-Appel Claude API avec un prompt optimisé pour le contenu viral TikTok FR.
+Appel OpenAI API avec un prompt optimisé pour le contenu viral TikTok FR.
 
 **Sortie JSON :**
 ```json
@@ -431,7 +431,7 @@ npm run start                              # studio preview (port 3000)
 
 # ── Vérifications système ─────────────────────────────────────────────
 python -c "import whisper; m = whisper.load_model('base'); print('Whisper OK')"
-python -c "import anthropic; print('Anthropic OK')"
+python -c "import openai; print('OpenAI OK')"
 python -c "from playwright.sync_api import sync_playwright; print('Playwright OK')"
 ffmpeg -version | head -1
 node -v && npx remotion --version
@@ -591,8 +591,8 @@ source venv/bin/activate
 
 # Test individuel de chaque module
 python -c "
-from config import ANTHROPIC_API_KEY, ELEVENLABS_API_KEY
-assert ANTHROPIC_API_KEY, 'ANTHROPIC_API_KEY manquante'
+from config import OPENAI_API_KEY, ELEVENLABS_API_KEY
+assert OPENAI_API_KEY, 'OPENAI_API_KEY manquante'
 assert ELEVENLABS_API_KEY, 'ELEVENLABS_API_KEY manquante'
 print('Config OK')
 "
