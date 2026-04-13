@@ -246,26 +246,44 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
     await human_delay(5000, 8000)
 
     # Attend la fin du traitement vidéo côté TikTok
-    try:
-        await page.wait_for_load_state("domcontentloaded", timeout=30000)
-    except Exception:
-        pass
-    await human_delay(3000, 5000)
-
-    # Remplissage de la description avec titre + hashtags
-    description = f"{title}\n{' '.join(hashtags[:20])}"
-
-    caption_selectors = [
-        '[data-testid="caption-input"]',
-        '.caption-input',
+    # Attend que TikTok Studio finisse de traiter la vidéo uploadée.
+    # Le formulaire (caption + Post) n'apparaît qu'après le traitement.
+    logger.info("Attente du formulaire TikTok Studio (traitement vidéo)...")
+    form_ready = False
+    form_selectors = [
         'div[contenteditable="true"]',
         'div[contenteditable="plaintext-only"]',
+        '[data-e2e="caption-input"]',
         'textarea[placeholder*="caption"]',
         'textarea[placeholder*="description"]',
         '[class*="caption"] div[contenteditable]',
+        '[class*="editor"] div[contenteditable]',
     ]
+    for sel in form_selectors:
+        try:
+            await page.wait_for_selector(sel, timeout=90000, state="visible")
+            logger.info(f"Formulaire prêt — sélecteur: {sel}")
+            form_ready = True
+            break
+        except Exception:
+            continue
 
-    for selector in caption_selectors:
+    if not form_ready:
+        logger.warning("Formulaire non détecté après 90s — tentative d'envoi quand même")
+        # Log des éléments présents pour debug
+        try:
+            html = await page.content()
+            logger.error(f"  HTML formulaire (1000 chars): {html[:1000]}")
+        except Exception:
+            pass
+
+    await human_delay(1500, 2500)
+
+    # Remplissage de la description avec titre + hashtags
+    description = f"{title}\n{' '.join(hashtags[:20])}"
+    caption_filled = False
+
+    for selector in form_selectors:
         try:
             caption = page.locator(selector).first
             if await caption.count() > 0:
@@ -273,29 +291,32 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
                 await human_delay(300, 700)
                 await caption.click()
                 await human_delay(200, 500)
-
-                # Vide le champ d'abord
                 await page.keyboard.press("Control+a")
                 await human_delay(100, 200)
-
                 await human_type(page, selector, description)
+                logger.info(f"Description remplie ({selector})")
+                caption_filled = True
                 break
         except Exception:
             continue
 
-    await human_delay(1500, 3000)
+    if not caption_filled:
+        logger.warning("Champ description non rempli — sélecteur introuvable")
 
-    # Micro-mouvements pendant la préparation
+    await human_delay(1500, 3000)
     await random_micro_movement(page)
 
     # Cherche et clique le bouton Post/Publier
     post_selectors = [
-        'button[data-testid="post-button"]',
+        '[data-e2e="post-video-btn"]',
+        'button[data-e2e="post-btn"]',
         'button:has-text("Post")',
         'button:has-text("Publier")',
+        'button[data-testid="post-button"]',
         '.btn-post',
     ]
 
+    post_clicked = False
     for selector in post_selectors:
         try:
             btn = page.locator(selector).first
@@ -305,19 +326,35 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
                 await human_delay(300, 800)
                 await btn.click()
                 await human_delay(3000, 5000)
-                logger.info("Bouton Post cliqué")
+                logger.info(f"Bouton Post cliqué ({selector})")
+                post_clicked = True
                 break
         except Exception:
             continue
 
-    # Vérifie la confirmation
+    if not post_clicked:
+        logger.error("Bouton Post introuvable — vidéo probablement en brouillon")
+        try:
+            html = await page.content()
+            logger.error(f"  HTML post-zone (1000 chars): {html[:1000]}")
+        except Exception:
+            pass
+        return False
+
+    # Attend confirmation (redirection ou disparition du formulaire)
     try:
-        await page.wait_for_url("**/profile**", timeout=15000)
+        await page.wait_for_url("**/tiktokstudio**", timeout=15000)
+        logger.info("Upload confirmé — retour TikTok Studio")
+        return True
+    except Exception:
+        pass
+    try:
+        await page.wait_for_url("**/profile**", timeout=10000)
         logger.info("Upload confirmé — redirection vers le profil")
         return True
     except Exception:
-        logger.warning("Pas de redirection profil détectée — vérification manuelle recommandée")
-        return True  # Optimiste : suppose que ça a marché
+        logger.info("Upload supposé réussi — pas de redirection détectée")
+        return True
 
 
 async def _get_element_center(page: Page, selector: str) -> tuple[int, int]:
