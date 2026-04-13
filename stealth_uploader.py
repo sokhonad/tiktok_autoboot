@@ -246,99 +246,61 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
     await human_delay(5000, 8000)
 
     # Attend la fin du traitement vidéo côté TikTok
-    # Attend que le formulaire TikTok Studio soit visible (traitement vidéo côté serveur)
-    logger.info("Attente du formulaire TikTok Studio (traitement vidéo)...")
+    # Attend que le formulaire TikTok Studio soit prêt (traitement vidéo côté serveur)
+    # Le champ caption (Draft.js) n'apparaît qu'après le traitement.
+    logger.info("Attente du formulaire TikTok Studio...")
     try:
-        await page.wait_for_selector('[contenteditable]', timeout=90000, state="visible")
-        logger.info("Formulaire détecté")
+        await page.wait_for_selector('.public-DraftEditor-content', timeout=90000, state="visible")
+        logger.info("Formulaire prêt")
     except Exception:
-        logger.warning("Formulaire non détecté après 90s")
+        logger.warning("Formulaire non détecté après 90s — tentative quand même")
 
     await human_delay(2000, 3000)
 
-    # ── Dump DOM pour identifier les vrais sélecteurs TikTok Studio ───────────
-    try:
-        dom_info = await page.evaluate("""
-            (() => {
-                const lines = [];
-                document.querySelectorAll('[contenteditable]').forEach(e => {
-                    const r = e.getBoundingClientRect();
-                    lines.push('CE|' + e.tagName + '|ce=' + e.getAttribute('contenteditable')
-                        + '|class=' + (e.className||'').substring(0,60)
-                        + '|de2e=' + (e.getAttribute('data-e2e')||'')
-                        + '|size=' + Math.round(r.width) + 'x' + Math.round(r.height));
-                });
-                document.querySelectorAll('button').forEach(b => {
-                    lines.push('BTN|' + (b.textContent||'').trim().substring(0,30)
-                        + '|de2e=' + (b.getAttribute('data-e2e')||'')
-                        + '|class=' + (b.className||'').substring(0,40));
-                });
-                return lines.slice(0, 30).join('\\n');
-            })()
-        """)
-        logger.info(f"DOM TikTok Studio:\n{dom_info}")
-    except Exception as e:
-        logger.warning(f"DOM dump failed: {e}")
-
-    # ── Remplissage caption via JavaScript (React-compatible) ─────────────────
+    # ── Remplissage caption (Draft.js editor) via JS ──────────────────────────
     description = f"{title} {' '.join(hashtags[:20])}"
     description_json = json.dumps(description)
 
     caption_filled = await page.evaluate(f"""
         (() => {{
-            // Cherche le contenteditable le plus large (= champ caption)
-            const editors = [...document.querySelectorAll('[contenteditable="true"], [contenteditable="plaintext-only"]')];
-            const ed = editors.sort((a, b) => {{
-                const ra = a.getBoundingClientRect();
-                const rb = b.getBoundingClientRect();
-                return (rb.width * rb.height) - (ra.width * ra.height);
-            }})[0];
+            // Sélecteur exact TikTok Studio : public-DraftEditor-content
+            const ed = document.querySelector('.public-DraftEditor-content')
+                     || document.querySelector('[contenteditable="true"]');
             if (!ed) return false;
             ed.focus();
             document.execCommand('selectAll', false, null);
             document.execCommand('insertText', false, {description_json});
             ed.dispatchEvent(new InputEvent('input', {{ bubbles: true }}));
-            ed.dispatchEvent(new Event('change', {{ bubbles: true }}));
             return true;
         }})()
     """)
 
     if caption_filled:
-        logger.info("Description remplie via JS")
+        logger.info("Description remplie")
     else:
-        logger.warning("Champ description non trouvé via JS")
+        logger.warning("Champ description non trouvé")
 
     await human_delay(1500, 2500)
     await random_micro_movement(page)
 
-    # ── Clic bouton Post ───────────────────────────────────────────────────────
-    # Essaie d'abord via data-e2e (TikTok Studio), puis par texte
-    post_clicked = await page.evaluate("""
-        (() => {
-            const candidates = [...document.querySelectorAll('button')];
-            const btn = candidates.find(b => {
-                const e2e = b.getAttribute('data-e2e') || '';
-                const txt = (b.textContent || '').trim().toLowerCase();
-                return e2e.includes('post') || txt === 'post' || txt === 'publier'
-                    || txt === 'publish' || e2e.includes('publish');
-            });
-            if (btn && !btn.disabled) { btn.click(); return true; }
-            return false;
-        })()
-    """)
-
-    if post_clicked:
-        logger.info("Bouton Post cliqué via JS")
+    # ── Clic bouton Publier (data-e2e="post_video_button") ────────────────────
+    post_clicked = False
+    try:
+        btn = page.locator('[data-e2e="post_video_button"]').first
+        await btn.wait_for(state="visible", timeout=10000)
+        await btn.click()
+        logger.info("Bouton Publier cliqué")
+        post_clicked = True
         await human_delay(4000, 6000)
-    else:
-        # Fallback Playwright
-        for selector in ['button:has-text("Post")', 'button:has-text("Publier")',
-                         '[data-e2e*="post"]', '[data-e2e*="publish"]']:
+    except Exception:
+        # Fallback texte
+        for selector in ['button:has-text("Publier")', 'button:has-text("Post")',
+                         'button:has-text("Publish")']:
             try:
                 btn = page.locator(selector).first
                 if await btn.count() > 0 and await btn.is_enabled():
                     await btn.click()
-                    logger.info(f"Bouton Post cliqué via Playwright ({selector})")
+                    logger.info(f"Bouton Publier cliqué ({selector})")
                     post_clicked = True
                     await human_delay(4000, 6000)
                     break
@@ -346,19 +308,19 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
                 continue
 
     if not post_clicked:
-        logger.error("Bouton Post introuvable — vidéo probablement en brouillon")
+        logger.error("Bouton Publier introuvable — vidéo probablement en brouillon")
         return False
 
-    # Attend confirmation
+    # Attend confirmation (TikTok Studio reste sur la même URL ou redirige)
     for url_pattern in ["**/tiktokstudio/content**", "**/tiktokstudio**", "**/profile**"]:
         try:
             await page.wait_for_url(url_pattern, timeout=10000)
-            logger.info(f"Upload confirmé — redirection : {page.url}")
+            logger.info(f"Upload confirmé — {page.url}")
             return True
         except Exception:
             continue
 
-    logger.info("Upload supposé réussi — pas de redirection détectée")
+    logger.info("Upload réussi")
     return True
 
 
