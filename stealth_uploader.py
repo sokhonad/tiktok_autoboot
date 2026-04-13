@@ -184,39 +184,46 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
     await page.goto(TIKTOK_UPLOAD_URL, wait_until="domcontentloaded", timeout=60000)
     await human_delay(3000, 5000)
 
-    # Sélecteurs input file — TikTok change son UI régulièrement
-    upload_selectors = [
-        'input[type="file"]',
-        'input[accept*="video"]',
-        '[data-testid="upload-input"]',
-        '.upload-wrapper input',
-        '.upload-input input',
-        '[class*="upload"] input[type="file"]',
-        'input[name="upload-btn"]',
-    ]
-
+    # TikTok charge son widget d'upload dans un iframe
+    # On cherche d'abord dans la page principale, puis dans tous les iframes
     upload_input = None
-    for selector in upload_selectors:
-        try:
-            loc = page.locator(selector).first
-            # Attend max 8s par sélecteur
-            await loc.wait_for(state="attached", timeout=8000)
-            upload_input = loc
-            logger.info(f"Input upload trouvé : {selector}")
-            break
-        except Exception:
-            continue
+
+    async def _find_input_in_context(context_obj):
+        """Cherche input[type=file] dans un contexte (page ou frame)."""
+        selectors = [
+            'input[type="file"]',
+            'input[accept*="video"]',
+            'input[accept*="mp4"]',
+        ]
+        for sel in selectors:
+            try:
+                loc = context_obj.locator(sel).first
+                await loc.wait_for(state="attached", timeout=5000)
+                return loc
+            except Exception:
+                continue
+        return None
+
+    # Cherche dans la page principale
+    upload_input = await _find_input_in_context(page)
+
+    # Cherche dans les iframes si pas trouvé
+    if not upload_input:
+        logger.info("Input non trouvé en page principale, recherche dans les iframes...")
+        frames = page.frames
+        for frame in frames:
+            if frame == page.main_frame:
+                continue
+            result = await _find_input_in_context(frame)
+            if result:
+                upload_input = result
+                logger.info(f"Input trouvé dans iframe : {frame.url[:60]}")
+                break
 
     if not upload_input:
-        # Dernier recours : prend n'importe quel input[type=file] dans la page
-        try:
-            upload_input = page.locator("input[type='file']").first
-            await upload_input.wait_for(state="attached", timeout=15000)
-            logger.info("Input upload trouvé via fallback générique")
-        except Exception:
-            logger.error("Input d'upload introuvable — screenshot de debug")
-            await page.screenshot(path="/app/logs/debug_upload.png")
-            return False
+        logger.error("Input d'upload introuvable — screenshot de debug")
+        await page.screenshot(path="/app/logs/debug_upload.png")
+        return False
 
     # Upload du fichier vidéo
     logger.info(f"Upload vidéo : {video_path.name}")
