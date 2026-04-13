@@ -34,7 +34,8 @@ WORKDIR /app
 
 # ── Dépendances Python ────────────────────────────────────────────────────────
 COPY requirements.txt .
-RUN pip install --upgrade pip setuptools wheel \
+RUN pip install --upgrade pip \
+    && pip install "setuptools<70" wheel \
     && pip install -r requirements.txt
 
 # ── Playwright Chromium ───────────────────────────────────────────────────────
