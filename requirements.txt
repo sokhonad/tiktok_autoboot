@@ -9,10 +9,7 @@ requests==2.32.3
 elevenlabs==1.5.0
 
 # ── Whisper (sous-titres) ────────────────────────────────────────────────────
-# openai-whisper installé séparément dans le Dockerfile (--no-build-isolation)
-torch==2.3.1
-torchaudio==2.3.1
-numba==0.60.0
+faster-whisper==1.0.3
 
 # ── Playwright (upload automatisé) ───────────────────────────────────────────
 playwright==1.44.0

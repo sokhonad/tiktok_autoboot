@@ -35,7 +35,6 @@ WORKDIR /app
 # ── Dépendances Python ────────────────────────────────────────────────────────
 COPY requirements.txt .
 RUN pip install --upgrade pip setuptools wheel \
-    && pip install openai-whisper==20240930 \
     && pip install -r requirements.txt
 
 # ── Playwright Chromium ───────────────────────────────────────────────────────

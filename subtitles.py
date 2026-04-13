@@ -1,29 +1,33 @@
 """
-subtitles.py — Génération de sous-titres SRT via Whisper local.
+subtitles.py — Génération de sous-titres SRT via faster-whisper.
 Transcrit chaque segment audio et produit un fichier .srt global avec offsets.
 """
 
+import json
 import logging
 import subprocess
-import json
 from pathlib import Path
 
-import whisper
+from faster_whisper import WhisperModel
 
 from config import WHISPER_MODEL, WHISPER_LANGUAGE, OUTPUT_DIR
 
 logger = logging.getLogger(__name__)
 
-# Modèle Whisper chargé une seule fois en mémoire
-_whisper_model: whisper.Whisper | None = None
+# Modèle chargé une seule fois (singleton)
+_whisper_model: WhisperModel | None = None
 
 
-def _get_model() -> whisper.Whisper:
-    """Charge le modèle Whisper en mémoire (singleton)."""
+def _get_model() -> WhisperModel:
+    """Charge le modèle faster-whisper en mémoire (singleton)."""
     global _whisper_model
     if _whisper_model is None:
-        logger.info(f"Chargement modèle Whisper '{WHISPER_MODEL}'...")
-        _whisper_model = whisper.load_model(WHISPER_MODEL)
+        logger.info(f"Chargement modèle faster-whisper '{WHISPER_MODEL}'...")
+        _whisper_model = WhisperModel(
+            WHISPER_MODEL,
+            device="cpu",
+            compute_type="int8",   # optimisé CPU, faible mémoire
+        )
     return _whisper_model
 
 
@@ -39,10 +43,8 @@ def _seconds_to_srt_timestamp(seconds: float) -> str:
 def _get_audio_duration(audio_path: Path) -> float:
     """Retourne la durée d'un fichier audio en secondes via ffprobe."""
     result = subprocess.run(
-        [
-            "ffprobe", "-v", "quiet", "-print_format", "json",
-            "-show_format", str(audio_path)
-        ],
+        ["ffprobe", "-v", "quiet", "-print_format", "json",
+         "-show_format", str(audio_path)],
         capture_output=True, text=True, check=True
     )
     info = json.loads(result.stdout)
@@ -64,19 +66,19 @@ def transcribe_segment(audio_path: Path, time_offset: float = 0.0) -> list[dict]
 
     logger.info(f"Transcription : {audio_path.name} (offset={time_offset:.2f}s)")
 
-    result = model.transcribe(
+    segments, _ = model.transcribe(
         str(audio_path),
         language=WHISPER_LANGUAGE,
-        word_timestamps=True,
-        verbose=False,
+        word_timestamps=False,
+        vad_filter=True,           # filtre les silences automatiquement
     )
 
     segments_out = []
-    for seg in result["segments"]:
+    for seg in segments:
         segments_out.append({
-            "start": seg["start"] + time_offset,
-            "end": seg["end"] + time_offset,
-            "text": seg["text"].strip(),
+            "start": seg.start + time_offset,
+            "end": seg.end + time_offset,
+            "text": seg.text.strip(),
         })
 
     return segments_out
@@ -100,12 +102,10 @@ def generate_srt(audio_paths: list[Path], job_id: str) -> Path:
         segments = transcribe_segment(audio_path, time_offset)
         all_segments.extend(segments)
 
-        # Calcule l'offset pour le segment suivant
         try:
             time_offset += _get_audio_duration(audio_path)
         except (subprocess.CalledProcessError, KeyError) as e:
             logger.warning(f"Impossible de lire la durée de {audio_path} : {e}")
-            # Fallback : utilise la fin du dernier segment transcrit
             if segments:
                 time_offset = segments[-1]["end"] + 0.2
 
@@ -114,13 +114,12 @@ def generate_srt(audio_paths: list[Path], job_id: str) -> Path:
     for i, seg in enumerate(all_segments, start=1):
         start_ts = _seconds_to_srt_timestamp(seg["start"])
         end_ts = _seconds_to_srt_timestamp(seg["end"])
-        # Texte en majuscules pour le style TikTok
-        text = seg["text"].upper()
+        text = seg["text"].upper()   # majuscules style TikTok
 
         srt_lines.append(str(i))
         srt_lines.append(f"{start_ts} --> {end_ts}")
         srt_lines.append(text)
-        srt_lines.append("")  # ligne vide entre chaque entrée SRT
+        srt_lines.append("")
 
     srt_dir = OUTPUT_DIR / job_id
     srt_dir.mkdir(parents=True, exist_ok=True)
