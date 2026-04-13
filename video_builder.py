@@ -117,33 +117,31 @@ def build_final_video(
     w, h = VIDEO_WIDTH, VIDEO_HEIGHT
     font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
-    # Filtre complexe FFmpeg
-    vf_filter = (
-        # Fond sombre animé (couleur + vignette subtile)
-        f"color=c=0x0d0d1a:size={w}x{h}:rate={VIDEO_FPS}[bg],"
+    # Échappe le chemin SRT pour FFmpeg (antislash Windows + virgules)
+    srt_escaped = str(srt_path).replace("\\", "/").replace(":", "\\:")
+
+    # Texte CTA nettoyé (supprime émojis et caractères non-ASCII problématiques)
+    cta_clean = "".join(c for c in cta[:50] if ord(c) < 128).strip()
+
+    # Filtre vidéo simple — PAS de label [bg], source déjà passée en -i
+    vf_filter = ",".join([
         # Barre violette en haut
-        f"drawbox=x=0:y=0:w={w}:h=6:color=0x6c63ff@1:t=fill,"
+        f"drawbox=x=0:y=0:w={w}:h=6:color=0x6c63ff@1:t=fill",
         # Header @tech_fr
-        f"drawtext=text='{CHANNEL_HANDLE}':"
-        f"fontfile={font_path}:fontcolor=white:fontsize=38:"
-        f"x=(w-text_w)/2:y=18,"
-        # Sous-titres style TikTok : blanc, centré, gros, avec ombre
-        f"subtitles='{str(srt_path).replace(chr(92), '/')}':force_style='"
-        f"FontName=DejaVuSans-Bold,"
-        f"FontSize=22,"
-        f"PrimaryColour=&H00FFFFFF,"
-        f"OutlineColour=&H00000000,"
-        f"Outline=3,"
-        f"Shadow=1,"
-        f"Alignment=2,"
-        f"MarginV=320',"
-        # CTA en bas les 3 dernières secondes
-        f"drawtext=text='{cta[:60]}':"
-        f"fontfile={font_path}:fontcolor=0xFFD700:fontsize=28:"
-        f"x=(w-text_w)/2:y=h-180:"
-        f"enable='between(t\\,{cta_start:.1f}\\,{duration:.1f})':"
-        f"box=1:boxcolor=0x000000@0.6:boxborderw=10"
-    )
+        f"drawtext=text='{CHANNEL_HANDLE}':fontfile={font_path}"
+        f":fontcolor=white:fontsize=38:x=(w-text_w)/2:y=18",
+        # Sous-titres style TikTok
+        f"subtitles='{srt_escaped}':force_style="
+        f"'FontName=DejaVuSans-Bold,FontSize=22,"
+        f"PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,"
+        f"Outline=3,Shadow=1,Alignment=2,MarginV=320'",
+        # CTA doré les 3 dernières secondes
+        f"drawtext=text='{cta_clean}':fontfile={font_path}"
+        f":fontcolor=0xFFD700:fontsize=26"
+        f":x=(w-text_w)/2:y=h-160"
+        f":enable='between(t,{cta_start:.1f},{duration:.1f})'"
+        f":box=1:boxcolor=0x000000@0.6:boxborderw=8",
+    ])
 
     _run_ffmpeg(
         [
