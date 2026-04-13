@@ -1,7 +1,6 @@
 version: "3.9"
 
 services:
-  # ── Bot principal Python ──────────────────────────────────────────────────
   tiktok-bot:
     build:
       context: .
@@ -10,40 +9,32 @@ services:
     restart: always
 
     environment:
-      # Variables lues depuis .env (non committés)
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
       - ELEVENLABS_VOICE_ID=${ELEVENLABS_VOICE_ID}
       - TIKTOK_COOKIES_PATH=/app/cookies.json
       - PYTHONUNBUFFERED=1
 
     volumes:
-      # Dossiers persistants montés depuis l'hôte
+      # Vidéos générées — persistantes sur l'hôte
       - ./output:/app/output
+      # Logs — visibles depuis l'hôte
       - ./logs:/app/logs
+      # Assets (backgrounds, musiques)
       - ./assets:/app/assets
+      # Cookies TikTok — montés en lecture seule
       - ./cookies.json:/app/cookies.json:ro
-      # Modèles Whisper en cache pour éviter re-téléchargement
+      # Cache Whisper — évite le re-téléchargement du modèle
       - whisper_cache:/root/.cache/whisper
 
-    # Le bot est exécuté par le cron systemd sur l'hôte (pas de commande par défaut)
-    # Pour un test manuel : docker compose run --rm tiktok-bot python main.py
-    command: ["python", "-c", "print('Container prêt. Utilisez le timer systemd.')"]
+    # Lance cron en foreground (planifie main.py toutes les 3h)
+    command: cron -f
 
-    # Ressources
     deploy:
       resources:
         limits:
           memory: 4G
           cpus: "2"
-
-    # Healthcheck : vérifie que Python et les imports principaux fonctionnent
-    healthcheck:
-      test: ["CMD", "python", "-c", "import anthropic, whisper, playwright; print('OK')"]
-      interval: 5m
-      timeout: 30s
-      retries: 3
-      start_period: 60s
 
     logging:
       driver: "json-file"
