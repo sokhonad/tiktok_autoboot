@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import random
+from datetime import datetime
 from pathlib import Path
 
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
@@ -86,6 +87,10 @@ Date.prototype.getTimezoneOffset = () => -60; // Europe/Paris
 // 7. Stocke la position souris pour human_mouse_move
 window._mouseX = 540; window._mouseY = 960;
 """
+
+
+def job_id_ts() -> str:
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
 def _normalize_cookies(cookies: list[dict]) -> list[dict]:
@@ -245,15 +250,33 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
 
     await human_delay(5000, 8000)
 
-    # Attend la fin du traitement vidéo côté TikTok
-    # Attend que le formulaire TikTok Studio soit prêt (traitement vidéo côté serveur)
-    # Le champ caption (Draft.js) n'apparaît qu'après le traitement.
+    # ── Dismiss dialog "J'ai compris" s'il est présent ───────────────────────
+    try:
+        jai_compris = page.locator('button:has-text("J\'ai compris")').first
+        if await jai_compris.count() > 0:
+            await jai_compris.click()
+            logger.info("Dialog 'J'ai compris' fermé")
+            await human_delay(1000, 1500)
+    except Exception:
+        pass
+
+    # ── Attend le formulaire (Draft.js editor) ────────────────────────────────
     logger.info("Attente du formulaire TikTok Studio...")
     try:
         await page.wait_for_selector('.public-DraftEditor-content', timeout=90000, state="visible")
         logger.info("Formulaire prêt")
     except Exception:
         logger.warning("Formulaire non détecté après 90s — tentative quand même")
+
+    # Dismiss à nouveau si dialog réapparu
+    try:
+        jai_compris = page.locator('button:has-text("J\'ai compris")').first
+        if await jai_compris.count() > 0:
+            await jai_compris.click()
+            logger.info("Dialog 'J'ai compris' refermé")
+            await human_delay(500, 1000)
+    except Exception:
+        pass
 
     await human_delay(2000, 3000)
 
@@ -263,7 +286,6 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
 
     caption_filled = await page.evaluate(f"""
         (() => {{
-            // Sélecteur exact TikTok Studio : public-DraftEditor-content
             const ed = document.querySelector('.public-DraftEditor-content')
                      || document.querySelector('[contenteditable="true"]');
             if (!ed) return false;
@@ -288,39 +310,53 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
     try:
         btn = page.locator('[data-e2e="post_video_button"]').first
         await btn.wait_for(state="visible", timeout=10000)
+        await btn.scroll_into_view_if_needed()
+        await human_delay(500, 1000)
         await btn.click()
         logger.info("Bouton Publier cliqué")
         post_clicked = True
-        await human_delay(4000, 6000)
     except Exception:
-        # Fallback texte
         for selector in ['button:has-text("Publier")', 'button:has-text("Post")',
                          'button:has-text("Publish")']:
             try:
                 btn = page.locator(selector).first
                 if await btn.count() > 0 and await btn.is_enabled():
+                    await btn.scroll_into_view_if_needed()
                     await btn.click()
                     logger.info(f"Bouton Publier cliqué ({selector})")
                     post_clicked = True
-                    await human_delay(4000, 6000)
                     break
             except Exception:
                 continue
 
     if not post_clicked:
-        logger.error("Bouton Publier introuvable — vidéo probablement en brouillon")
+        logger.error("Bouton Publier introuvable")
+        screenshot_path = f"/app/logs/debug_post_{job_id_ts()}.png"
+        await page.screenshot(path=screenshot_path)
+        logger.error(f"Screenshot : {screenshot_path}")
         return False
 
-    # Attend confirmation (TikTok Studio reste sur la même URL ou redirige)
-    for url_pattern in ["**/tiktokstudio/content**", "**/tiktokstudio**", "**/profile**"]:
-        try:
-            await page.wait_for_url(url_pattern, timeout=10000)
-            logger.info(f"Upload confirmé — {page.url}")
-            return True
-        except Exception:
-            continue
+    # Attend 8s puis screenshot pour vérifier l'état après clic
+    await human_delay(7000, 9000)
+    screenshot_path = f"/app/logs/after_post_{job_id_ts()}.png"
+    await page.screenshot(path=screenshot_path)
+    logger.info(f"Screenshot après post : {screenshot_path}")
 
-    logger.info("Upload réussi")
+    # Vérifie si un dialog d'erreur est apparu
+    error_text = await page.evaluate("""
+        (() => {
+            const dialogs = document.querySelectorAll('[role="dialog"], [class*="modal"], [class*="toast"]');
+            for (const d of dialogs) {
+                const txt = (d.textContent || '').trim();
+                if (txt.length > 5) return txt.substring(0, 200);
+            }
+            return '';
+        })()
+    """)
+    if error_text:
+        logger.warning(f"Dialog/toast après post : {error_text[:200]}")
+
+    logger.info(f"URL après post : {page.url}")
     return True
 
 
