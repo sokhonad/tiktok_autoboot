@@ -182,36 +182,53 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
     # Navigation vers la page d'upload
     logger.info("Navigation vers la page d'upload...")
     await page.goto(TIKTOK_UPLOAD_URL, wait_until="domcontentloaded", timeout=60000)
-    await human_delay(2000, 3500)
+    await human_delay(3000, 5000)
 
-    # Cherche le bouton d'upload ou l'input file
+    # Sélecteurs input file — TikTok change son UI régulièrement
     upload_selectors = [
         'input[type="file"]',
+        'input[accept*="video"]',
         '[data-testid="upload-input"]',
         '.upload-wrapper input',
+        '.upload-input input',
+        '[class*="upload"] input[type="file"]',
+        'input[name="upload-btn"]',
     ]
 
     upload_input = None
     for selector in upload_selectors:
         try:
-            upload_input = page.locator(selector).first
-            if await upload_input.count() > 0:
-                break
+            loc = page.locator(selector).first
+            # Attend max 8s par sélecteur
+            await loc.wait_for(state="attached", timeout=8000)
+            upload_input = loc
+            logger.info(f"Input upload trouvé : {selector}")
+            break
         except Exception:
             continue
 
     if not upload_input:
-        logger.error("Input d'upload introuvable sur la page TikTok")
-        return False
+        # Dernier recours : prend n'importe quel input[type=file] dans la page
+        try:
+            upload_input = page.locator("input[type='file']").first
+            await upload_input.wait_for(state="attached", timeout=15000)
+            logger.info("Input upload trouvé via fallback générique")
+        except Exception:
+            logger.error("Input d'upload introuvable — screenshot de debug")
+            await page.screenshot(path="/app/logs/debug_upload.png")
+            return False
 
     # Upload du fichier vidéo
     logger.info(f"Upload vidéo : {video_path.name}")
-    await upload_input.set_input_files(str(video_path))
-    await human_delay(3000, 6000)
+    await upload_input.set_input_files(str(video_path), timeout=60000)
+    await human_delay(4000, 7000)
 
-    # Attend que la vidéo soit traitée
-    await page.wait_for_load_state("networkidle", timeout=60000)
-    await human_delay(2000, 4000)
+    # Attend le traitement vidéo (barre de progression TikTok)
+    try:
+        await page.wait_for_load_state("domcontentloaded", timeout=30000)
+    except Exception:
+        pass
+    await human_delay(3000, 5000)
 
     # Remplissage de la description avec titre + hashtags
     description = f"{title}\n{' '.join(hashtags[:20])}"
@@ -220,7 +237,10 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
         '[data-testid="caption-input"]',
         '.caption-input',
         'div[contenteditable="true"]',
+        'div[contenteditable="plaintext-only"]',
         'textarea[placeholder*="caption"]',
+        'textarea[placeholder*="description"]',
+        '[class*="caption"] div[contenteditable]',
     ]
 
     for selector in caption_selectors:
