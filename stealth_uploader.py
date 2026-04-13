@@ -305,34 +305,27 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
     await human_delay(1500, 2500)
     await random_micro_movement(page)
 
-    # ── Clic bouton Publier (data-e2e="post_video_button") ────────────────────
-    post_clicked = False
-    try:
-        btn = page.locator('[data-e2e="post_video_button"]').first
-        await btn.wait_for(state="visible", timeout=10000)
-        await btn.scroll_into_view_if_needed()
-        await human_delay(500, 1000)
-        await btn.click()
-        logger.info("Bouton Publier cliqué")
-        post_clicked = True
-    except Exception:
-        for selector in ['button:has-text("Publier")', 'button:has-text("Post")',
-                         'button:has-text("Publish")']:
-            try:
-                btn = page.locator(selector).first
-                if await btn.count() > 0 and await btn.is_enabled():
-                    await btn.scroll_into_view_if_needed()
-                    await btn.click()
-                    logger.info(f"Bouton Publier cliqué ({selector})")
-                    post_clicked = True
-                    break
-            except Exception:
-                continue
+    # ── Clic bouton Publier via JS (scroll + clic même si hors viewport) ────────
+    post_clicked = await page.evaluate("""
+        (() => {
+            const btn = document.querySelector('[data-e2e="post_video_button"]')
+                     || [...document.querySelectorAll('button')].find(b => {
+                            const txt = (b.textContent || '').trim().toLowerCase();
+                            return txt === 'publier' || txt === 'post' || txt === 'publish';
+                        });
+            if (!btn || btn.disabled) return false;
+            btn.scrollIntoView({ block: 'center' });
+            btn.click();
+            return true;
+        })()
+    """)
 
-    if not post_clicked:
+    if post_clicked:
+        logger.info("Bouton Publier cliqué via JS")
+    else:
         logger.error("Bouton Publier introuvable")
         screenshot_path = f"/app/logs/debug_post_{job_id_ts()}.png"
-        await page.screenshot(path=screenshot_path)
+        await page.screenshot(path=screenshot_path, full_page=True)
         logger.error(f"Screenshot : {screenshot_path}")
         return False
 
