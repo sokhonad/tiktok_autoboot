@@ -46,7 +46,7 @@ RETRY_MAX = 3
 RETRY_DELAY_SECONDS = 10
 
 # ── TikTok ───────────────────────────────────────────────────────────────────
-TIKTOK_UPLOAD_URL = "https://www.tiktok.com/upload"
+TIKTOK_UPLOAD_URL = "https://www.tiktok.com/tiktokstudio/upload"
 CHANNEL_HANDLE = "@tech_fr"
 
 # Crée les dossiers si absents au démarrage

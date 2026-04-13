@@ -157,7 +157,11 @@ async def _load_cookies(context: BrowserContext) -> None:
 
 async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list[str]) -> bool:
     """
-    Effectue l'upload réel sur TikTok avec simulation de comportement humain.
+    Effectue l'upload réel sur TikTok Studio avec simulation de comportement humain.
+
+    TikTok Studio (tiktokstudio/upload) charge le formulaire via React — le
+    input[type=file] est masqué jusqu'au clic sur la zone d'upload.
+    On utilise expect_file_chooser() pour intercepter le sélecteur natif.
 
     Args:
         page: Page Playwright active
@@ -179,68 +183,69 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
     await scroll_naturally(page, 200, "up")
     await human_delay(800, 1500)
 
-    # Navigation vers la page d'upload
-    logger.info("Navigation vers la page d'upload...")
+    # Navigation vers TikTok Studio upload
+    logger.info("Navigation vers TikTok Studio upload...")
     await page.goto(TIKTOK_UPLOAD_URL, wait_until="domcontentloaded", timeout=60000)
-    await human_delay(3000, 5000)
+    await human_delay(6000, 9000)  # Attend le rendu React complet
 
-    # TikTok charge son widget d'upload dans un iframe
-    # On cherche d'abord dans la page principale, puis dans tous les iframes
-    upload_input = None
+    logger.info(f"Page chargée — URL: {page.url} | Titre: {await page.title()}")
 
-    async def _find_input_in_context(context_obj):
-        """Cherche input[type=file] dans un contexte (page ou frame)."""
-        selectors = [
-            'input[type="file"]',
-            'input[accept*="video"]',
-            'input[accept*="mp4"]',
-        ]
-        for sel in selectors:
+    # ── Méthode 1 : file chooser (clic sur la zone d'upload) ─────────────────
+    # TikTok Studio masque l'input jusqu'au clic — on intercepte le dialog natif.
+    upload_done = False
+
+    upload_zone_selectors = [
+        '[class*="upload-card"]',
+        '[class*="upload-zone"]',
+        '[class*="uploadCard"]',
+        '[class*="uploadZone"]',
+        '[class*="upload-btn"]',
+        '[data-e2e="upload-zone"]',
+        'button:has-text("Sélectionner")',
+        'button:has-text("Select")',
+        'button:has-text("Upload")',
+        'div[role="button"][class*="upload"]',
+    ]
+
+    for zone_sel in upload_zone_selectors:
+        try:
+            async with page.expect_file_chooser(timeout=6000) as fc_info:
+                await page.click(zone_sel, timeout=3000)
+            file_chooser = await fc_info.value
+            await file_chooser.set_files(str(video_path))
+            logger.info(f"Vidéo uploadée via file chooser ({zone_sel})")
+            upload_done = True
+            break
+        except Exception:
+            continue
+
+    # ── Méthode 2 : input[type=file] direct (fallback) ────────────────────────
+    if not upload_done:
+        for sel in ['input[type="file"]', 'input[accept*="video"]']:
             try:
-                loc = context_obj.locator(sel).first
+                loc = page.locator(sel).first
                 await loc.wait_for(state="attached", timeout=5000)
-                return loc
+                await loc.set_input_files(str(video_path), timeout=60000)
+                logger.info(f"Vidéo uploadée via input direct ({sel})")
+                upload_done = True
+                break
             except Exception:
                 continue
-        return None
 
-    # Cherche dans la page principale
-    upload_input = await _find_input_in_context(page)
-
-    # Cherche dans les iframes si pas trouvé
-    if not upload_input:
-        logger.info("Input non trouvé en page principale, recherche dans les iframes...")
-        frames = page.frames
-        for frame in frames:
-            if frame == page.main_frame:
-                continue
-            result = await _find_input_in_context(frame)
-            if result:
-                upload_input = result
-                logger.info(f"Input trouvé dans iframe : {frame.url[:60]}")
-                break
-
-    if not upload_input:
-        # Log de debug : URL, titre, frames et HTML partiel
-        logger.error(f"Input introuvable — URL: {page.url}")
-        logger.error(f"Input introuvable — Titre: {await page.title()}")
-        all_frames = page.frames
-        for i, f in enumerate(all_frames):
+    if not upload_done:
+        logger.error(f"Upload impossible — URL: {page.url}")
+        for i, f in enumerate(page.frames):
             logger.error(f"  Frame {i}: {f.url[:100]}")
-        # Log du HTML de la page pour inspecter la structure
         try:
             html = await page.content()
-            logger.error(f"  HTML (500 chars): {html[:500]}")
+            logger.error(f"  HTML (1000 chars): {html[:1000]}")
         except Exception:
             pass
         return False
 
-    # Upload du fichier vidéo
-    logger.info(f"Upload vidéo : {video_path.name}")
-    await upload_input.set_input_files(str(video_path), timeout=60000)
-    await human_delay(4000, 7000)
+    await human_delay(5000, 8000)
 
-    # Attend le traitement vidéo (barre de progression TikTok)
+    # Attend la fin du traitement vidéo côté TikTok
     try:
         await page.wait_for_load_state("domcontentloaded", timeout=30000)
     except Exception:
