@@ -146,18 +146,28 @@ async def run_pipeline(topic: str | None = None) -> bool:
     logger.info("ÉTAPE 6/7 — Randomisation métadonnées...")
     final_video = randomize_video_metadata(video_path, job_id)
 
-    # ── Étape 7 : Upload TikTok ──────────────────────────────────────────────
+    # ── Étape 7 : Upload TikTok (retry séparé — ne recharge pas l'IA) ─────────
     logger.info("ÉTAPE 7/7 — Upload TikTok (Playwright)...")
-    upload_success = await upload_to_tiktok(
-        video_path=final_video,
-        title=script["title"],
-        hashtags=script.get("hashtags", []),
-    )
+    upload_success = False
+    for upload_attempt in range(1, RETRY_MAX + 1):
+        try:
+            upload_success = await upload_to_tiktok(
+                video_path=final_video,
+                title=script["title"],
+                hashtags=script.get("hashtags", []),
+            )
+            if upload_success:
+                break
+            logger.warning(f"Upload tentative {upload_attempt} : échec sans exception")
+        except Exception as e:
+            logger.error(f"Upload tentative {upload_attempt}/{RETRY_MAX} : {e}")
+            if upload_attempt < RETRY_MAX:
+                logger.info(f"Retry upload dans {RETRY_DELAY_SECONDS}s...")
+                await asyncio.sleep(RETRY_DELAY_SECONDS)
 
     pipeline_duration = time.time() - pipeline_start
 
     # ── Enregistrement analytics ─────────────────────────────────────────────
-    # Durée vidéo (approximée depuis les segments)
     total_duration = sum(
         s.get("duration_estimate", 5) for s in script["segments"]
     )
@@ -185,27 +195,14 @@ async def run_pipeline(topic: str | None = None) -> bool:
 
 async def run_with_retry(topic: str | None = None) -> bool:
     """
-    Lance le pipeline avec retry automatique (max RETRY_MAX tentatives).
-
-    Args:
-        topic: Topic optionnel à forcer
-
-    Returns:
-        True si au moins une tentative a réussi
+    Lance la génération une seule fois.
+    Le retry de l'upload est géré directement dans run_pipeline.
     """
-    for attempt in range(1, RETRY_MAX + 1):
-        try:
-            logger.info(f"Tentative {attempt}/{RETRY_MAX}")
-            result = await run_pipeline(topic)
-            if result:
-                return True
-            logger.warning(f"Tentative {attempt} : upload échoué (sans exception)")
-        except Exception as e:
-            logger.error(f"Tentative {attempt} échouée avec exception : {e}", exc_info=True)
-
-        if attempt < RETRY_MAX:
-            logger.info(f"Attente {RETRY_DELAY_SECONDS}s avant retry...")
-            await asyncio.sleep(RETRY_DELAY_SECONDS)
+    try:
+        return await run_pipeline(topic)
+    except Exception as e:
+        logger.error(f"Pipeline échoué : {e}", exc_info=True)
+        return False
 
     logger.error(f"Toutes les tentatives ont échoué pour ce job")
     return False
