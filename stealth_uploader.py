@@ -412,26 +412,41 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
     else:
         logger.info("Pas de dialog de confirmation finale")
 
-    await human_delay(2000, 3000)
-    screenshot_path = f"/app/logs/after_post_{job_id_ts()}.png"
-    await page.screenshot(path=screenshot_path)
-    logger.info(f"Screenshot après post : {screenshot_path}")
+    # Attend 15s pour que TikTok traite et redirige
+    await human_delay(14000, 16000)
 
-    # Vérifie si un dialog d'erreur est apparu
-    error_text = await page.evaluate("""
+    screenshot_path = f"/app/logs/after_post_{job_id_ts()}.png"
+    await page.screenshot(path=screenshot_path, full_page=True)
+    logger.info(f"Screenshot après post : {screenshot_path}")
+    logger.info(f"URL après post : {page.url}")
+
+    # Dump texte visible sur la page (toasts, messages, titres)
+    page_text = await page.evaluate("""
         (() => {
-            const dialogs = document.querySelectorAll('[role="dialog"], [class*="modal"], [class*="toast"]');
-            for (const d of dialogs) {
-                const txt = (d.textContent || '').trim();
-                if (txt.length > 5) return txt.substring(0, 200);
-            }
-            return '';
+            const body = document.body;
+            if (!body) return '';
+            // Cherche toasts, dialogs, notifications
+            const els = [...document.querySelectorAll(
+                '[role="dialog"], [class*="toast"], [class*="modal"], [class*="notification"], h1, h2'
+            )];
+            return els.map(e => (e.textContent||'').trim().substring(0, 100))
+                      .filter(t => t.length > 3)
+                      .slice(0, 10)
+                      .join(' | ');
         })()
     """)
-    if error_text:
-        logger.warning(f"Dialog/toast après post : {error_text[:200]}")
+    if page_text:
+        logger.info(f"Page après post : {page_text[:500]}")
 
-    logger.info(f"URL après post : {page.url}")
+    # Vérifie les boutons présents (pour savoir si on est encore sur le formulaire)
+    buttons_present = await page.evaluate("""
+        (() => [...document.querySelectorAll('button')]
+            .map(b => (b.textContent||'').trim())
+            .filter(t => t.length > 2)
+            .slice(0, 8)
+            .join(' | '))()
+    """)
+    logger.info(f"Boutons présents : {buttons_present}")
     return True
 
 
