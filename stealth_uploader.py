@@ -373,7 +373,7 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
         else:
             break
 
-    # Passe 2 : "Activer les vérifications automatiques du contenu ?" → clic Activer
+    # Passe 2 : "Activer les vérifications automatiques" → clic Activer
     await human_delay(1000, 2000)
     activated = await page.evaluate("""
         (() => {
@@ -391,6 +391,26 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
         await human_delay(2000, 3000)
     else:
         logger.info("Dialog vérification droits d'auteur non trouvé (optionnel)")
+
+    # Passe 3 : "Continuer à publier ? ... Publier maintenant" → confirmation finale
+    await human_delay(1000, 2000)
+    published_now = await page.evaluate("""
+        (() => {
+            const btns = [...document.querySelectorAll('button')];
+            const btn = btns.find(b => {
+                const txt = (b.textContent || '').trim().toLowerCase();
+                return txt.includes('publier maintenant') || txt.includes('publish now')
+                    || txt.includes('publier quand même') || txt.includes('continue');
+            });
+            if (btn) { btn.click(); return (b => (b.textContent||'').trim())(btn); }
+            return '';
+        })()
+    """)
+    if published_now:
+        logger.info(f"Confirmation finale cliquée : '{published_now}'")
+        await human_delay(3000, 5000)
+    else:
+        logger.info("Pas de dialog de confirmation finale")
 
     await human_delay(2000, 3000)
     screenshot_path = f"/app/logs/after_post_{job_id_ts()}.png"
