@@ -305,17 +305,36 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
     await human_delay(1500, 2500)
     await random_micro_movement(page)
 
-    # ── Attend que la vidéo soit prête (processing indicator disparu) ──────────
+    # ── Attend que la vidéo soit COMPLÈTEMENT traitée par TikTok ─────────────
+    # "Chargement..." disparaît quand la miniature est générée = vidéo prête
     logger.info("Attente fin de traitement vidéo TikTok...")
+
+    # Attend que l'indicateur de chargement disparaisse
+    for loading_sel in [
+        'text="Chargement..."',
+        '[class*="loading"]',
+        '[class*="progress"]',
+        '[class*="uploading"]',
+    ]:
+        try:
+            await page.wait_for_selector(loading_sel, state="hidden", timeout=180000)
+            logger.info(f"Traitement terminé (indicateur disparu : {loading_sel})")
+            break
+        except Exception:
+            continue
+
+    # Vérifie que le bouton Publier est bien cliquable
     try:
         await page.wait_for_selector(
             '[data-e2e="post_video_button"]:not([disabled])',
-            timeout=120000,
+            timeout=30000,
             state="visible",
         )
         logger.info("Bouton Publier disponible")
     except Exception:
-        logger.warning("Timeout attente bouton Publier — tentative quand même")
+        logger.warning("Bouton Publier potentiellement non disponible — tentative quand même")
+
+    await human_delay(2000, 3000)
 
     await human_delay(1000, 2000)
 
