@@ -305,24 +305,46 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
     await human_delay(1500, 2500)
     await random_micro_movement(page)
 
-    # ── Clic bouton Publier via JS (scroll + clic même si hors viewport) ────────
-    post_clicked = await page.evaluate("""
-        (() => {
-            const btn = document.querySelector('[data-e2e="post_video_button"]')
-                     || [...document.querySelectorAll('button')].find(b => {
-                            const txt = (b.textContent || '').trim().toLowerCase();
-                            return txt === 'publier' || txt === 'post' || txt === 'publish';
-                        });
-            if (!btn || btn.disabled) return false;
-            btn.scrollIntoView({ block: 'center' });
-            btn.click();
-            return true;
-        })()
-    """)
+    # ── Attend que la vidéo soit prête (processing indicator disparu) ──────────
+    logger.info("Attente fin de traitement vidéo TikTok...")
+    try:
+        await page.wait_for_selector(
+            '[data-e2e="post_video_button"]:not([disabled])',
+            timeout=120000,
+            state="visible",
+        )
+        logger.info("Bouton Publier disponible")
+    except Exception:
+        logger.warning("Timeout attente bouton Publier — tentative quand même")
 
-    if post_clicked:
-        logger.info("Bouton Publier cliqué via JS")
-    else:
+    await human_delay(1000, 2000)
+
+    # ── Clic Playwright natif (déclenche les handlers React) ──────────────────
+    post_clicked = False
+    try:
+        btn = page.locator('[data-e2e="post_video_button"]').first
+        await btn.scroll_into_view_if_needed()
+        await btn.click(force=True, timeout=10000)
+        logger.info("Bouton Publier cliqué (Playwright)")
+        post_clicked = True
+    except Exception as e:
+        logger.warning(f"Playwright click échoué ({e}) — fallback JS")
+        post_clicked = await page.evaluate("""
+            (() => {
+                const btn = document.querySelector('[data-e2e="post_video_button"]')
+                         || [...document.querySelectorAll('button')].find(b =>
+                                ['publier','post','publish'].includes(
+                                    (b.textContent||'').trim().toLowerCase()));
+                if (!btn || btn.disabled) return false;
+                btn.scrollIntoView({ block: 'center' });
+                btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                return true;
+            })()
+        """)
+        if post_clicked:
+            logger.info("Bouton Publier cliqué (JS dispatchEvent)")
+
+    if not post_clicked:
         logger.error("Bouton Publier introuvable")
         screenshot_path = f"/app/logs/debug_post_{job_id_ts()}.png"
         await page.screenshot(path=screenshot_path, full_page=True)
