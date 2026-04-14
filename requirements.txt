@@ -7,6 +7,7 @@ httpx==0.27.2
 
 # ── TTS (edge-tts — Microsoft, gratuit, aucune clé API) ─────────────────────
 edge-tts==6.1.12
+requests==2.32.3
 
 # ── Whisper (sous-titres) ────────────────────────────────────────────────────
 faster-whisper==1.0.3
