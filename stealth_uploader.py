@@ -190,6 +190,24 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
 
     # Navigation vers TikTok Studio upload
     logger.info("Navigation vers TikTok Studio upload...")
+
+    # Intercepte les réponses API TikTok pour détecter publish/erreurs
+    publish_responses = []
+
+    async def on_response(response):
+        url = response.url
+        if any(kw in url for kw in ["publish", "post/create", "aweme/create", "item/create"]):
+            try:
+                body = await response.json()
+                publish_responses.append({"url": url, "status": response.status, "body": body})
+                logger.info(f"API TikTok publish: {response.status} — {url[-60:]}")
+                logger.info(f"  Réponse: {str(body)[:200]}")
+            except Exception:
+                publish_responses.append({"url": url, "status": response.status})
+                logger.info(f"API TikTok: {response.status} — {url[-60:]}")
+
+    page.on("response", on_response)
+
     await page.goto(TIKTOK_UPLOAD_URL, wait_until="domcontentloaded", timeout=60000)
     await human_delay(6000, 9000)  # Attend le rendu React complet
 
@@ -280,29 +298,31 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
 
     await human_delay(2000, 3000)
 
-    # ── Remplissage caption (Draft.js editor) via JS ──────────────────────────
-    description = f"{title} {' '.join(hashtags[:20])}"
-    description_json = json.dumps(description)
+    # ── Remplissage caption via clavier Playwright (Draft.js compatible) ──────
+    description = f"{title} {' '.join(hashtags[:15])}"
+    caption_filled = False
+    try:
+        ed = page.locator('.public-DraftEditor-content, [contenteditable="true"]').first
+        await ed.wait_for(state="visible", timeout=10000)
+        await ed.click()
+        await human_delay(300, 500)
+        await page.keyboard.press("Control+a")
+        await human_delay(200, 300)
+        await page.keyboard.press("Delete")
+        await human_delay(200, 300)
+        await page.keyboard.type(description, delay=30)
+        await human_delay(500, 800)
+        # Vérifie que le texte est bien dans le champ
+        current = await ed.inner_text()
+        if len(current.strip()) > 5:
+            logger.info(f"Description remplie : '{current[:60]}'")
+            caption_filled = True
+        else:
+            logger.warning(f"Caption potentiellement vide : '{current}'")
+    except Exception as e:
+        logger.warning(f"Caption fill échoué : {e}")
 
-    caption_filled = await page.evaluate(f"""
-        (() => {{
-            const ed = document.querySelector('.public-DraftEditor-content')
-                     || document.querySelector('[contenteditable="true"]');
-            if (!ed) return false;
-            ed.focus();
-            document.execCommand('selectAll', false, null);
-            document.execCommand('insertText', false, {description_json});
-            ed.dispatchEvent(new InputEvent('input', {{ bubbles: true }}));
-            return true;
-        }})()
-    """)
-
-    if caption_filled:
-        logger.info("Description remplie")
-    else:
-        logger.warning("Champ description non trouvé")
-
-    await human_delay(1500, 2500)
+    await human_delay(1000, 1500)
     await random_micro_movement(page)
 
     # ── Attend que la vidéo soit COMPLÈTEMENT traitée par TikTok ─────────────
