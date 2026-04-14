@@ -329,8 +329,27 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
         logger.error(f"Screenshot : {screenshot_path}")
         return False
 
-    # Attend 8s puis screenshot pour vérifier l'état après clic
-    await human_delay(7000, 9000)
+    # Attend 5s puis accepte le dialog de vérification droits d'auteur TikTok
+    await human_delay(4000, 6000)
+
+    # Dialog "Activer les vérifications automatiques du contenu ?" → clic Confirmer/Activer
+    confirmed = await page.evaluate("""
+        (() => {
+            const btns = [...document.querySelectorAll('button')];
+            const btn = btns.find(b => {
+                const txt = (b.textContent || '').trim().toLowerCase();
+                return txt.includes('activer') || txt.includes('confirm') || txt.includes('ok')
+                    || txt.includes('continuer') || txt.includes('continue') || txt.includes('compris');
+            });
+            if (btn) { btn.click(); return (b => (b.textContent||'').trim())(btn); }
+            return '';
+        })()
+    """)
+    if confirmed:
+        logger.info(f"Dialog post-publication accepté : '{confirmed}'")
+        await human_delay(3000, 4000)
+
+    await human_delay(2000, 3000)
     screenshot_path = f"/app/logs/after_post_{job_id_ts()}.png"
     await page.screenshot(path=screenshot_path)
     logger.info(f"Screenshot après post : {screenshot_path}")
