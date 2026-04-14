@@ -1,24 +1,33 @@
 """
-tts.py — Génération audio via ElevenLabs (multilingual v2).
+tts.py — Génération audio via edge-tts (Microsoft, gratuit, aucune clé API).
+Voix française de haute qualité : fr-FR-DeniseNeural (féminine) ou fr-FR-HenriNeural (masculine).
 Génère un fichier MP3 par segment du script.
 """
 
+import asyncio
 import logging
 from pathlib import Path
 
-import requests
+import edge_tts
 
-from config import (
-    ELEVENLABS_API_KEY,
-    ELEVENLABS_VOICE_ID,
-    TTS_MODEL,
-    TTS_SPEED,
-    OUTPUT_DIR,
-)
+from config import OUTPUT_DIR, TTS_SPEED
 
 logger = logging.getLogger(__name__)
 
-ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1"
+# Voix française edge-tts — changer ici pour basculer M/F
+# Voix disponibles FR : fr-FR-DeniseNeural, fr-FR-HenriNeural,
+#                       fr-FR-EloiseNeural, fr-BE-CharlineNeural
+TTS_VOICE = "fr-FR-DeniseNeural"
+
+# Taux de parole : +10% = légèrement plus rapide
+# Format edge-tts : "+10%" ou "-5%" (relatif à la vitesse normale)
+_RATE_OFFSET = "+10%"
+
+
+async def _generate_segment_async(text: str, output_path: Path) -> None:
+    """Génère un segment audio MP3 via edge-tts (async)."""
+    communicate = edge_tts.Communicate(text, TTS_VOICE, rate=_RATE_OFFSET)
+    await communicate.save(str(output_path))
 
 
 def generate_segment_audio(
@@ -33,47 +42,18 @@ def generate_segment_audio(
     Args:
         text: Texte à synthétiser
         segment_id: Numéro du segment (pour nommer le fichier)
-        job_id: Identifiant unique du job (ex: timestamp)
-        speed: Vitesse de lecture (1.0 = normal, 1.1 = légèrement rapide)
+        job_id: Identifiant unique du job
+        speed: Ignoré (géré par _RATE_OFFSET)
 
     Returns:
         Path vers le fichier MP3 généré
-
-    Raises:
-        requests.HTTPError: Si l'appel API ElevenLabs échoue
     """
-    url = f"{ELEVENLABS_BASE_URL}/text-to-speech/{ELEVENLABS_VOICE_ID}"
-
-    headers = {
-        "xi-api-key": ELEVENLABS_API_KEY,
-        "Content-Type": "application/json",
-        "Accept": "audio/mpeg",
-    }
-
-    payload = {
-        "text": text,
-        "model_id": TTS_MODEL,
-        "voice_settings": {
-            "stability": 0.5,           # équilibre stabilité/expressivité
-            "similarity_boost": 0.75,   # fidélité à la voix originale
-            "style": 0.4,               # un peu de style pour TikTok
-            "use_speaker_boost": True,
-        },
-        # speed est un paramètre de génération, pas de voice_settings
-    }
-
-    logger.info(f"TTS segment {segment_id} : '{text[:50]}...'")
-
-    response = requests.post(url, json=payload, headers=headers, timeout=30)
-    response.raise_for_status()
-
-    # Sauvegarde dans output/<job_id>/audio_segment_<id>.mp3
     audio_dir = OUTPUT_DIR / job_id / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
-
     output_path = audio_dir / f"segment_{segment_id:02d}.mp3"
-    output_path.write_bytes(response.content)
 
+    logger.info(f"TTS segment {segment_id} : '{text[:50]}...'")
+    asyncio.run(_generate_segment_async(text, output_path))
     logger.info(f"Audio segment {segment_id} sauvegardé : {output_path}")
     return output_path
 
@@ -94,11 +74,10 @@ def generate_all_segments(segments: list[dict], job_id: str) -> list[Path]:
     for segment in segments:
         seg_id = segment.get("id", len(audio_paths) + 1)
         text = segment["text"]
-
         try:
             path = generate_segment_audio(text, seg_id, job_id)
             audio_paths.append(path)
-        except requests.HTTPError as e:
+        except Exception as e:
             logger.error(f"Erreur TTS segment {seg_id} : {e}")
             raise
 

@@ -12,8 +12,7 @@ load_dotenv(Path(__file__).parent / ".env")
 
 # ── API Keys ────────────────────────────────────────────────────────────────
 OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-ELEVENLABS_API_KEY: str = os.getenv("ELEVENLABS_API_KEY", "")
-ELEVENLABS_VOICE_ID: str = os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")  # Sarah FR par défaut
+# ElevenLabs supprimé — remplacé par edge-tts (gratuit, aucune clé API)
 
 # ── Chemins fichiers ─────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).parent
@@ -38,7 +37,6 @@ VIDEO_DURATION_MAX = 60                  # secondes, limite TikTok
 
 # ── TTS ──────────────────────────────────────────────────────────────────────
 TTS_SPEED = 1.1                          # légèrement accéléré, naturel FR
-TTS_MODEL = "eleven_multilingual_v2"
 
 # ── Pipeline ─────────────────────────────────────────────────────────────────
 VIDEOS_PER_DAY = 8
