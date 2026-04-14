@@ -5,6 +5,7 @@ Génère un fichier MP3 par segment du script.
 """
 
 import asyncio
+import concurrent.futures
 import logging
 from pathlib import Path
 
@@ -53,7 +54,9 @@ def generate_segment_audio(
     output_path = audio_dir / f"segment_{segment_id:02d}.mp3"
 
     logger.info(f"TTS segment {segment_id} : '{text[:50]}...'")
-    asyncio.run(_generate_segment_async(text, output_path))
+    # Lance dans un thread séparé pour éviter le conflit avec la boucle asyncio de main.py
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        executor.submit(asyncio.run, _generate_segment_async(text, output_path)).result()
     logger.info(f"Audio segment {segment_id} sauvegardé : {output_path}")
     return output_path
 
