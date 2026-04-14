@@ -24,8 +24,8 @@ services:
       - ./assets:/app/assets
       # Cookies TikTok — montés en lecture seule
       - ./cookies.json:/app/cookies.json:ro
-      # Cache Whisper — évite le re-téléchargement du modèle
-      - whisper_cache:/root/.cache/whisper
+      # Cache faster-whisper / HuggingFace — évite le re-téléchargement du modèle
+      - whisper_cache:/root/.cache/huggingface
 
     # Lance cron en foreground (planifie main.py toutes les 3h)
     command: cron -f
