@@ -516,10 +516,24 @@ async def upload_to_tiktok(
     Returns:
         True si l'upload a réussi
     """
+    # Lance un écran virtuel Xvfb pour mode non-headless (contourne détection TikTok)
+    import subprocess, os
+    xvfb_proc = None
+    display = ":99"
+    try:
+        xvfb_proc = subprocess.Popen(
+            ["Xvfb", display, "-screen", "0", "1920x1080x24", "-ac"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        os.environ["DISPLAY"] = display
+        logger.info(f"Xvfb démarré sur {display}")
+    except Exception as e:
+        logger.warning(f"Xvfb non disponible ({e}) — fallback headless")
+
     async with async_playwright() as pw:
-        # Lance Chromium avec options anti-détection
+        # Lance Chromium en mode non-headless (anti-détection TikTok)
         browser: Browser = await pw.chromium.launch(
-            headless=True,
+            headless=xvfb_proc is None,  # headless seulement si Xvfb n'est pas dispo
             args=[
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
@@ -528,6 +542,7 @@ async def upload_to_tiktok(
                 "--disable-features=IsolateOrigins,site-per-process",
                 "--window-size=1920,1080",
                 "--start-maximized",
+                f"--display={display}",
             ],
         )
 
@@ -560,5 +575,8 @@ async def upload_to_tiktok(
             success = False
         finally:
             await browser.close()
+            if xvfb_proc:
+                xvfb_proc.terminate()
+                logger.info("Xvfb arrêté")
 
     return success
