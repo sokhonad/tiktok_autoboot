@@ -1,34 +1,22 @@
 """
-tts.py — Génération audio via edge-tts (Microsoft, gratuit, aucune clé API).
-Voix française de haute qualité : fr-FR-DeniseNeural (féminine) ou fr-FR-HenriNeural (masculine).
+tts.py — Génération audio via gTTS (Google Translate TTS, gratuit, aucune clé API).
+Fonctionne depuis les VPS/serveurs sans restriction IP.
 Génère un fichier MP3 par segment du script.
 """
 
-import asyncio
-import concurrent.futures
 import logging
 from pathlib import Path
 
-import edge_tts
+from gtts import gTTS
 
 from config import OUTPUT_DIR, TTS_SPEED
 
 logger = logging.getLogger(__name__)
 
-# Voix française edge-tts — changer ici pour basculer M/F
-# Voix disponibles FR : fr-FR-DeniseNeural, fr-FR-HenriNeural,
-#                       fr-FR-EloiseNeural, fr-BE-CharlineNeural
-TTS_VOICE = "fr-FR-DeniseNeural"
-
-# Taux de parole : +10% = légèrement plus rapide
-# Format edge-tts : "+10%" ou "-5%" (relatif à la vitesse normale)
-_RATE_OFFSET = "+10%"
-
-
-async def _generate_segment_async(text: str, output_path: Path) -> None:
-    """Génère un segment audio MP3 via edge-tts (async)."""
-    communicate = edge_tts.Communicate(text, TTS_VOICE, rate=_RATE_OFFSET)
-    await communicate.save(str(output_path))
+# Langue et domaine TLD pour la voix FR
+# tld="fr" = accent français (France), tld="ca" = accent québécois
+_LANG = "fr"
+_TLD = "fr"
 
 
 def generate_segment_audio(
@@ -44,7 +32,7 @@ def generate_segment_audio(
         text: Texte à synthétiser
         segment_id: Numéro du segment (pour nommer le fichier)
         job_id: Identifiant unique du job
-        speed: Ignoré (géré par _RATE_OFFSET)
+        speed: Ignoré (gTTS ne supporte pas la vitesse variable)
 
     Returns:
         Path vers le fichier MP3 généré
@@ -54,9 +42,8 @@ def generate_segment_audio(
     output_path = audio_dir / f"segment_{segment_id:02d}.mp3"
 
     logger.info(f"TTS segment {segment_id} : '{text[:50]}...'")
-    # Lance dans un thread séparé pour éviter le conflit avec la boucle asyncio de main.py
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        executor.submit(asyncio.run, _generate_segment_async(text, output_path)).result()
+    tts = gTTS(text=text, lang=_LANG, tld=_TLD, slow=False)
+    tts.save(str(output_path))
     logger.info(f"Audio segment {segment_id} sauvegardé : {output_path}")
     return output_path
 
