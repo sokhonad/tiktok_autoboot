@@ -329,25 +329,46 @@ async def _upload_video(page: Page, video_path: Path, title: str, hashtags: list
         logger.error(f"Screenshot : {screenshot_path}")
         return False
 
-    # Attend 5s puis accepte le dialog de vérification droits d'auteur TikTok
+    # Attend 5s puis gère les dialogs post-publication
     await human_delay(4000, 6000)
 
-    # Dialog "Activer les vérifications automatiques du contenu ?" → clic Confirmer/Activer
-    confirmed = await page.evaluate("""
+    # Passe 1 : "J'ai compris" (dialog d'info générale)
+    for _ in range(3):
+        dismissed = await page.evaluate("""
+            (() => {
+                const btns = [...document.querySelectorAll('button')];
+                const btn = btns.find(b => {
+                    const txt = (b.textContent || '').trim().toLowerCase();
+                    return txt.includes('compris') || txt.includes('ok') || txt.includes('fermer');
+                });
+                if (btn) { btn.click(); return (b => (b.textContent||'').trim())(btn); }
+                return '';
+            })()
+        """)
+        if dismissed:
+            logger.info(f"Dialog info fermé : '{dismissed}'")
+            await human_delay(1500, 2500)
+        else:
+            break
+
+    # Passe 2 : "Activer les vérifications automatiques du contenu ?" → clic Activer
+    await human_delay(1000, 2000)
+    activated = await page.evaluate("""
         (() => {
             const btns = [...document.querySelectorAll('button')];
             const btn = btns.find(b => {
                 const txt = (b.textContent || '').trim().toLowerCase();
-                return txt.includes('activer') || txt.includes('confirm') || txt.includes('ok')
-                    || txt.includes('continuer') || txt.includes('continue') || txt.includes('compris');
+                return txt === 'activer' || txt === 'activate' || txt.startsWith('activer');
             });
             if (btn) { btn.click(); return (b => (b.textContent||'').trim())(btn); }
             return '';
         })()
     """)
-    if confirmed:
-        logger.info(f"Dialog post-publication accepté : '{confirmed}'")
-        await human_delay(3000, 4000)
+    if activated:
+        logger.info(f"Vérification droits d'auteur activée : '{activated}'")
+        await human_delay(2000, 3000)
+    else:
+        logger.info("Dialog vérification droits d'auteur non trouvé (optionnel)")
 
     await human_delay(2000, 3000)
     screenshot_path = f"/app/logs/after_post_{job_id_ts()}.png"
